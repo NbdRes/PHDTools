@@ -1,0 +1,83 @@
+# Install and load required packages
+if (!requireNamespace("officer", quietly = TRUE)) install.packages("officer")
+if (!requireNamespace("stringr", quietly = TRUE)) install.packages("stringr")
+if (!requireNamespace("writexl", quietly = TRUE)) install.packages("writexl")
+if (!requireNamespace("rstudioapi", quietly = TRUE)) install.packages("rstudioapi")
+
+library(officer)
+library(stringr)
+library(writexl)
+library(rstudioapi)
+
+extract_bracketed_text <- function(docx_path, xlsx_path) {
+  # Read the Word document
+  doc <- read_docx(docx_path)
+  
+  # Extract all text from the document
+  full_text <- docx_summary(doc)$text
+  full_text <- paste(full_text, collapse = " ")
+  
+  # Find all text within brackets (square brackets, parentheses, and curly braces)
+  bracketed_text <- str_extract_all(full_text, "\\[.*?\\]|\\(.*?\\)|\\{.*?\\}")[[1]]
+  
+  # Remove the outermost brackets from each extracted item
+  bracketed_text <- str_sub(bracketed_text, 2, -2)
+  
+  # Create a data frame with the extracted text and bracket type
+  df <- data.frame(
+    ExtractedText = bracketed_text,
+    BracketType = str_extract(str_extract_all(full_text, "\\[.*?\\]|\\(.*?\\)|\\{.*?\\}")[[1]], "^[\\[\\(\\{]")
+  )
+  
+  # Replace bracket symbols with text in the BracketType column
+  df$BracketType <- sapply(df$BracketType, function(x) {
+    switch(x,
+           "[" = "Square Brackets",
+           "(" = "Parentheses",
+           "{" = "Curly Braces")
+  })
+  
+  # Write the data frame to an Excel file
+  write_xlsx(df, xlsx_path)
+  
+  cat(sprintf("Extracted %d items to %s\n", nrow(df), xlsx_path))
+}
+
+# Function to get file path using dialog or console input
+get_file_path <- function(type, filter) {
+  if (rstudioapi::isAvailable()) {
+    if (type == "input") {
+      path <- rstudioapi::selectFile(caption = "Select Word document", 
+                                     filter = filter, 
+                                     existing = TRUE)
+    } else {
+      path <- rstudioapi::selectFile(caption = "Save Excel file as", 
+                                     filter = filter, 
+                                     existing = FALSE)
+    }
+  } else {
+    if (type == "input") {
+      path <- readline(prompt = "Enter the path to the Word document: ")
+    } else {
+      path <- readline(prompt = "Enter the path to save the Excel file: ")
+    }
+  }
+  return(path)
+}
+
+# Main execution
+tryCatch({
+  word_file <- get_file_path("input", "Word files (*.docx)")
+  if (is.null(word_file) || word_file == "") {
+    stop("No input file selected. Exiting program.")
+  }
+  
+  excel_file <- get_file_path("output", "Excel files (*.xlsx)")
+  if (is.null(excel_file) || excel_file == "") {
+    stop("No output file specified. Exiting program.")
+  }
+  
+  extract_bracketed_text(word_file, excel_file)
+}, error = function(e) {
+  cat("An error occurred:", conditionMessage(e), "\n")
+})
