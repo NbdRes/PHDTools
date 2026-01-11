@@ -1,0 +1,75 @@
+library(rstudioapi)
+library(readr)
+library(readxl)
+library(stringi)  # For proper Unicode handling
+
+# Open file dialog to select CSV or Excel file
+file_path <- rstudioapi::selectFile(
+  caption = "בחר קובץ CSV או Excel",
+  filter = "Data Files (*.csv;*.xlsx;*.xls)"
+)
+
+if (is.null(file_path) || file_path == "") {
+  stop("לא נבחר קובץ")
+}
+
+# Get the directory of the selected file
+output_dir <- dirname(file_path)
+
+# Read the file based on extension
+file_ext <- tolower(tools::file_ext(file_path))
+
+if (file_ext == "csv") {
+  data <- read_csv(file_path, show_col_types = FALSE)
+} else if (file_ext %in% c("xlsx", "xls")) {
+  data <- read_excel(file_path)
+} else {
+  stop("פורמט קובץ לא נתמך. אנא בחר CSV או Excel")
+}
+
+# Check if required columns exist
+if (!("Text" %in% colnames(data)) || !("ID" %in% colnames(data))) {
+  stop("הקובץ חייב להכיל עמודות 'Text' ו-'ID'")
+}
+
+# Function to keep only Greek letters and spaces
+keep_greek_and_spaces <- function(text) {
+  if (is.na(text)) return("")
+  text <- as.character(text)
+  
+  # Keep only Ancient Greek letters (with diacritics) and regular spaces
+  # Using stringi package which properly handles Unicode
+  # Greek script includes both ranges automatically
+  cleaned <- stri_replace_all_regex(text, "[^\\p{Greek} ]", "")
+  
+  return(cleaned)
+}
+
+# Process each row
+created_files <- 0
+skipped_files <- 0
+
+for (i in 1:nrow(data)) {
+  file_id <- as.character(data$ID[i])
+  text_content <- keep_greek_and_spaces(data$Text[i])
+  
+  # Skip if text is empty or only whitespace
+  if (nchar(trimws(text_content)) == 0) {
+    skipped_files <- skipped_files + 1
+    next
+  }
+  
+  # Create TXT file in the same directory as source file
+  filename <- file.path(output_dir, paste0(file_id, ".txt"))
+  
+  # Write with UTF-8 encoding, preserving all spaces
+  con <- file(filename, "w", encoding = "UTF-8")
+  writeLines(text_content, con, useBytes = FALSE)
+  close(con)
+  
+  created_files <- created_files + 1
+}
+
+cat(paste("נוצרו", created_files, "קבצי TXT בהצלחה\n"))
+cat(paste("דולגו", skipped_files, "שורות ריקות\n"))
+cat(paste("הקבצים נשמרו ב:", output_dir, "\n"))
